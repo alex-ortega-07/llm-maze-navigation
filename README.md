@@ -1,4 +1,4 @@
-# maze-generator-algorithm
+# llm-maze-navigation
 An application that generates mazes of a specific size, drawing each step of the generation in real time with SDL2.
 
 The maze is built with a **randomized Prim's algorithm**: starting from a random cell, it repeatedly picks a random frontier cell, connects it to an already visited neighbour by removing the wall between them, and continues until every cell has been visited.
