@@ -28,27 +28,30 @@ const SDL_Color SELECTED = {100, 100, 200, 255};
 const int FPS = 60;
 const int FRAME_DELAY = 1000 / FPS;
 
-void quit_wall(Cell (*grid)[GRID_COLS], int index_y, int index_x, char *wall){
-    if(wall == "right"){
-        grid[index_y][index_x].wall.r = false;
-        grid[index_y][index_x + 1].wall.l = false;
-    }
+enum class Direction { Up, Down, Left, Right };
 
-    else if(wall == "left"){
-        grid[index_y][index_x].wall.l = false;
-        grid[index_y][index_x - 1].wall.r = false;
-    }
+void quit_wall(Cell (*grid)[GRID_COLS], int index_y, int index_x, Direction wall){
+    switch(wall){
+        case Direction::Right:
+            grid[index_y][index_x].wall.r = false;
+            grid[index_y][index_x + 1].wall.l = false;
+            break;
 
-    else if(wall == "up"){
-        grid[index_y][index_x].wall.u = false;
-        grid[index_y - 1][index_x].wall.d = false;
-    }
+        case Direction::Left:
+            grid[index_y][index_x].wall.l = false;
+            grid[index_y][index_x - 1].wall.r = false;
+            break;
 
-    else if(wall == "down"){
-        grid[index_y][index_x].wall.d = false;
-        grid[index_y + 1][index_x].wall.u = false;
+        case Direction::Up:
+            grid[index_y][index_x].wall.u = false;
+            grid[index_y - 1][index_x].wall.d = false;
+            break;
+
+        case Direction::Down:
+            grid[index_y][index_x].wall.d = false;
+            grid[index_y + 1][index_x].wall.u = false;
+            break;
     }
-    
 }
 
 void draw_visiting_cell(SDL_Renderer *renderer, Cell (*grid)[GRID_COLS], SDL_Color color){
@@ -229,19 +232,19 @@ int main(int argv, char *args[]){
             cell_x = grid[visiting_list[num][0]][visiting_list[num][1]].parent_cell.x;
 
             if(visiting_list[num][0] - cell_y == -1){
-                quit_wall(grid, cell_y, cell_x, "up");
+                quit_wall(grid, cell_y, cell_x, Direction::Up);
             }
 
             else if(visiting_list[num][0] - cell_y == 1){
-                quit_wall(grid, cell_y, cell_x, "down");
+                quit_wall(grid, cell_y, cell_x, Direction::Down);
             }
 
             else if(visiting_list[num][1] - cell_x == -1){
-                quit_wall(grid, cell_y, cell_x, "left");
+                quit_wall(grid, cell_y, cell_x, Direction::Left);
             }
 
             else if(visiting_list[num][1] - cell_x == 1){
-                quit_wall(grid, cell_y, cell_x, "right");
+                quit_wall(grid, cell_y, cell_x, Direction::Right);
             }
 
             cell_y = visiting_list[num][0];
