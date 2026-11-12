@@ -8,6 +8,8 @@
 
 #include "Cell.hpp"
 
+using Grid = std::vector<std::vector<Cell>>;
+
 const int GRID[] {20, 10};
 const int GRID_ROWS = GRID[1];
 const int GRID_COLS = GRID[0];
@@ -30,7 +32,7 @@ const int FRAME_DELAY = 1000 / FPS;
 
 enum class Direction { Up, Down, Left, Right };
 
-void quit_wall(Cell (*grid)[GRID_COLS], int index_y, int index_x, Direction wall){
+void quit_wall(Grid &grid, int index_y, int index_x, Direction wall){
     switch(wall){
         case Direction::Right:
             grid[index_y][index_x].wall.r = false;
@@ -54,22 +56,24 @@ void quit_wall(Cell (*grid)[GRID_COLS], int index_y, int index_x, Direction wall
     }
 }
 
-void draw_visiting_cell(SDL_Renderer *renderer, Cell (*grid)[GRID_COLS], SDL_Color color){
-    for(int i = 0; i < GRID_ROWS; ++i){
-        for(int k = 0; k < GRID_COLS; ++k){
+void draw_visiting_cell(SDL_Renderer *renderer, const Grid &grid, SDL_Color color){
+    for(size_t i = 0; i < grid.size(); ++i){
+        for(size_t k = 0; k < grid[i].size(); ++k){
             if(grid[i][k].visiting){
                 SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-                SDL_Rect visiting {MARGIN + CELL_WIDTH * k + 1, MARGIN + CELL_WIDTH * i + 1, CELL_WIDTH - 1, CELL_WIDTH - 1};
+                SDL_Rect visiting {MARGIN + CELL_WIDTH * static_cast<int>(k) + 1,
+                                   MARGIN + CELL_WIDTH * static_cast<int>(i) + 1,
+                                   CELL_WIDTH - 1, CELL_WIDTH - 1};
                 SDL_RenderFillRect(renderer, &visiting);
             }
         }
     }
 }
 
-bool all_visited(Cell (*grid)[GRID_COLS]){
-    for(int i = 0; i < GRID_ROWS; ++i){
-        for(int k = 0; k < GRID_COLS; ++k){
-            if(!grid[i][k].visited){
+bool all_visited(const Grid &grid){
+    for(const auto &row : grid){
+        for(const auto &cell : row){
+            if(!cell.visited){
                 return false;
             }
         }
@@ -79,8 +83,11 @@ bool all_visited(Cell (*grid)[GRID_COLS]){
 }
 
 // Marks a neighbour as a frontier cell if it exists and has not been visited yet
-void mark_visiting(Cell (*grid)[GRID_COLS], int neighbour_y, int neighbour_x, int parent_y, int parent_x){
-    if(neighbour_y < 0 || neighbour_y >= GRID_ROWS || neighbour_x < 0 || neighbour_x >= GRID_COLS){
+void mark_visiting(Grid &grid, int neighbour_y, int neighbour_x, int parent_y, int parent_x){
+    int rows = static_cast<int>(grid.size());
+    int cols = static_cast<int>(grid[0].size());
+
+    if(neighbour_y < 0 || neighbour_y >= rows || neighbour_x < 0 || neighbour_x >= cols){
         return;
     }
 
@@ -93,7 +100,7 @@ void mark_visiting(Cell (*grid)[GRID_COLS], int neighbour_y, int neighbour_x, in
     }
 }
 
-void add_visiting(Cell (*grid)[GRID_COLS], int cell_y, int cell_x){
+void add_visiting(Grid &grid, int cell_y, int cell_x){
     mark_visiting(grid, cell_y + 1, cell_x, cell_y, cell_x);
     mark_visiting(grid, cell_y - 1, cell_x, cell_y, cell_x);
     mark_visiting(grid, cell_y, cell_x + 1, cell_y, cell_x);
@@ -152,7 +159,7 @@ int main(int argv, char *args[]){
     cell_start.color = CELL_START_WALL;
     cell_end.color = CELL_END_WALL;
 
-    Cell grid[GRID_ROWS][GRID_COLS];
+    Grid grid(GRID_ROWS, std::vector<Cell>(GRID_COLS));
 
     for(int i = 0; i < GRID_ROWS; ++i){
         for(int k = 0; k < GRID_COLS; ++k){
@@ -199,7 +206,7 @@ int main(int argv, char *args[]){
         if(!all_visited(grid)){
             draw_visiting_cell(renderer, grid, CELL_VISITING);
 
-            visiting_list.erase(visiting_list.begin(), visiting_list.end());
+            visiting_list.clear();
             for(int i = 0; i < GRID_ROWS; ++i){
                 for(int k = 0; k < GRID_COLS; ++k){
                     if(grid[i][k].visiting && !grid[i][k].visited){
