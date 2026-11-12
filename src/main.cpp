@@ -88,30 +88,26 @@ void add_visiting(Cell (*grid)[GRID_COLS], bool (*visiting)[GRID_COLS]){
     }
 }
 
+// Marks a neighbour as a frontier cell if it exists and has not been visited yet
+void mark_visiting(Cell (*grid)[GRID_COLS], int neighbour_y, int neighbour_x, int parent_y, int parent_x){
+    if(neighbour_y < 0 || neighbour_y >= GRID_ROWS || neighbour_x < 0 || neighbour_x >= GRID_COLS){
+        return;
+    }
+
+    Cell &neighbour = grid[neighbour_y][neighbour_x];
+
+    if(!neighbour.visited){
+        neighbour.visiting = true;
+        neighbour.parent_cell.y = parent_y;
+        neighbour.parent_cell.x = parent_x;
+    }
+}
+
 void add_visiting(Cell (*grid)[GRID_COLS], int cell_y, int cell_x){
-    if(!grid[cell_y + 1][cell_x].visited && cell_y + 1 < GRID_ROWS){
-        grid[cell_y + 1][cell_x].visiting = true;
-        grid[cell_y + 1][cell_x].parent_cell.y = cell_y;
-        grid[cell_y + 1][cell_x].parent_cell.x = cell_x;
-    }
-
-    if(!grid[cell_y - 1][cell_x].visited && cell_y - 1 >= 0){
-        grid[cell_y - 1][cell_x].visiting = true;
-        grid[cell_y - 1][cell_x].parent_cell.y = cell_y;
-        grid[cell_y - 1][cell_x].parent_cell.x = cell_x;
-    }
-
-    if(!grid[cell_y][cell_x + 1].visited && cell_x + 1 < GRID_COLS){
-        grid[cell_y][cell_x + 1].visiting = true;
-        grid[cell_y][cell_x + 1].parent_cell.y = cell_y;
-        grid[cell_y][cell_x + 1].parent_cell.x = cell_x;
-    }
-
-    if(!grid[cell_y][cell_x - 1].visited && cell_x - 1 >= 0){
-        grid[cell_y][cell_x - 1].visiting = true;
-        grid[cell_y][cell_x - 1].parent_cell.y = cell_y;
-        grid[cell_y][cell_x - 1].parent_cell.x = cell_x;
-    }
+    mark_visiting(grid, cell_y + 1, cell_x, cell_y, cell_x);
+    mark_visiting(grid, cell_y - 1, cell_x, cell_y, cell_x);
+    mark_visiting(grid, cell_y, cell_x + 1, cell_y, cell_x);
+    mark_visiting(grid, cell_y, cell_x - 1, cell_y, cell_x);
 }
 
 int main(int argv, char *args[]){
