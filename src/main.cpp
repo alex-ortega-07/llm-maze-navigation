@@ -2,6 +2,9 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <time.h>
 #include <vector>
@@ -10,14 +13,16 @@
 
 using Grid = std::vector<std::vector<Cell>>;
 
-const int GRID[] {20, 10};
-const int GRID_ROWS = GRID[1];
-const int GRID_COLS = GRID[0];
+enum class Direction { Up, Down, Left, Right };
+
+// Default maze size (in cells) and allowed range for the command-line options
+const int DEFAULT_GRID_COLS = 20;
+const int DEFAULT_GRID_ROWS = 10;
+const int MIN_GRID_SIZE = 2;
+const int MAX_GRID_SIZE = 50;
+
 const int CELL_WIDTH = 40;
 const int MARGIN = 20;
-
-const int SCREEN_WIDTH = CELL_WIDTH * GRID_COLS + MARGIN * 2;
-const int SCREEN_HEIGHT = CELL_WIDTH * GRID_ROWS + MARGIN * 2;
 
 const SDL_Color BLACK = {0, 0, 0, 255};
 const SDL_Color WHITE = {255, 255, 255, 255};
@@ -30,7 +35,83 @@ const SDL_Color SELECTED = {100, 100, 200, 255};
 const int FPS = 60;
 const int FRAME_DELAY = 1000 / FPS;
 
-enum class Direction { Up, Down, Left, Right };
+struct Options {
+    int cols = DEFAULT_GRID_COLS;
+    int rows = DEFAULT_GRID_ROWS;
+};
+
+enum class ParseResult { Ok, Help, Error };
+
+void print_usage(const char *program_path){
+    // Show only the file name, not the full path
+    const char *program = program_path;
+    for(const char *c = program_path; *c != '\0'; ++c){
+        if(*c == '/' || *c == '\\'){
+            program = c + 1;
+        }
+    }
+
+    std::cout << "Usage: " << program << " [options]\n"
+              << "\n"
+              << "Options:\n"
+              << "  -w, --width  <n>   Number of columns (" << MIN_GRID_SIZE << "-" << MAX_GRID_SIZE
+              << ", default " << DEFAULT_GRID_COLS << ")\n"
+              << "  -h, --height <n>   Number of rows    (" << MIN_GRID_SIZE << "-" << MAX_GRID_SIZE
+              << ", default " << DEFAULT_GRID_ROWS << ")\n"
+              << "      --help         Show this help and exit\n";
+}
+
+// Converts text to an int inside [MIN_GRID_SIZE, MAX_GRID_SIZE]. Returns false if invalid.
+bool parse_grid_size(const char *text, int &out){
+    char *end = nullptr;
+    errno = 0;
+    long value = std::strtol(text, &end, 10);
+
+    if(end == text || *end != '\0' || errno == ERANGE){
+        return false;
+    }
+
+    if(value < MIN_GRID_SIZE || value > MAX_GRID_SIZE){
+        return false;
+    }
+
+    out = static_cast<int>(value);
+    return true;
+}
+
+ParseResult parse_args(int argc, char *argv[], Options &options){
+    for(int i = 1; i < argc; ++i){
+        const char *arg = argv[i];
+
+        if(std::strcmp(arg, "--help") == 0){
+            return ParseResult::Help;
+        }
+
+        bool is_width = std::strcmp(arg, "-w") == 0 || std::strcmp(arg, "--width") == 0;
+        bool is_height = std::strcmp(arg, "-h") == 0 || std::strcmp(arg, "--height") == 0;
+
+        if(!is_width && !is_height){
+            std::cerr << "Unknown option: " << arg << "\n";
+            return ParseResult::Error;
+        }
+
+        if(i + 1 >= argc){
+            std::cerr << "Missing value for " << arg << "\n";
+            return ParseResult::Error;
+        }
+
+        const char *value = argv[++i];
+        int &target = is_width ? options.cols : options.rows;
+
+        if(!parse_grid_size(value, target)){
+            std::cerr << "Invalid value for " << arg << ": '" << value << "' (must be a number between "
+                      << MIN_GRID_SIZE << " and " << MAX_GRID_SIZE << ")\n";
+            return ParseResult::Error;
+        }
+    }
+
+    return ParseResult::Ok;
+}
 
 void quit_wall(Grid &grid, int index_y, int index_x, Direction wall){
     switch(wall){
@@ -107,7 +188,28 @@ void add_visiting(Grid &grid, int cell_y, int cell_x){
     mark_visiting(grid, cell_y, cell_x - 1, cell_y, cell_x);
 }
 
-int main(int argv, char *args[]){
+int main(int argc, char *argv[]){
+    Options options;
+
+    switch(parse_args(argc, argv, options)){
+        case ParseResult::Help:
+            print_usage(argv[0]);
+            return 0;
+
+        case ParseResult::Error:
+            print_usage(argv[0]);
+            return 1;
+
+        case ParseResult::Ok:
+            break;
+    }
+
+    const int GRID_COLS = options.cols;
+    const int GRID_ROWS = options.rows;
+
+    const int SCREEN_WIDTH = CELL_WIDTH * GRID_COLS + MARGIN * 2;
+    const int SCREEN_HEIGHT = CELL_WIDTH * GRID_ROWS + MARGIN * 2;
+
     if(SDL_Init(SDL_INIT_VIDEO) < 0){
         return 1;
     }
@@ -155,7 +257,7 @@ int main(int argv, char *args[]){
     }
 
     cell_start.width = cell_end.width = cell_start.height = cell_end.height = CELL_WIDTH - 10;
-    
+
     cell_start.color = CELL_START_WALL;
     cell_end.color = CELL_END_WALL;
 
@@ -202,7 +304,7 @@ int main(int argv, char *args[]){
 
         SDL_SetRenderDrawColor(renderer, BACKGROUND.r, BACKGROUND.g, BACKGROUND.b, BACKGROUND.a);
         SDL_RenderClear(renderer);
-        
+
         if(!all_visited(grid)){
             draw_visiting_cell(renderer, grid, CELL_VISITING);
 

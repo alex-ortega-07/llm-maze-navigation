@@ -36,7 +36,22 @@ Once the application is opened, press `ESC` to exit.
 
 Note that the window is **borderless, always on top and hides the mouse cursor**, so `ESC` is the way to close it.
 
-The maze size is set by the `GRID` constant (columns, rows) at the top of `src/main.cpp`.
+### Options
+The maze size can be set from the command line (default: 20 columns × 10 rows, allowed range 2–50):
+
+```bash
+maze.exe -w 30 -h 15
+maze.exe --width 30 --height 15
+maze.exe --help
+```
+
+| Option | Description |
+| --- | --- |
+| `-w`, `--width <n>` | Number of columns |
+| `-h`, `--height <n>` | Number of rows |
+| `--help` | Show the help and exit |
+
+Each cell is 40 px wide, so large values can make the window bigger than the screen.
 
 ### Screenshots
 https://user-images.githubusercontent.com/85643095/198393196-648f2b0f-da55-4ce7-8859-6fb488ab3045.mp4
