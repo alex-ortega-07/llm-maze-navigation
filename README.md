@@ -32,7 +32,15 @@ From the project root:
 The executable is created as `maze.exe` in the project root, and object files go to `build/`.
 
 ## Usage
-Once the application is opened, press `ESC` to exit.
+Once the maze is fully generated, an **entrance** (green) and an **exit** (red) are picked at random on two different border cells, and their outer walls are opened. A yellow **player** square then appears on the entrance.
+
+### Controls
+| Key | Action |
+| --- | --- |
+| `W` / `A` / `S` / `D` | Move the player up / left / down / right |
+| `ESC` | Exit |
+
+The player moves one cell per key press (hold the key to keep moving) and cannot go through walls. When it reaches the exit, `You reached the exit!` is printed to the console and the player stops moving.
 
 Note that the window is **borderless, always on top and hides the mouse cursor**, so `ESC` is the way to close it.
 
