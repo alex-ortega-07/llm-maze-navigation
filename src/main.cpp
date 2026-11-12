@@ -78,16 +78,6 @@ bool all_visited(Cell (*grid)[GRID_COLS]){
     return true;
 }
 
-void add_visiting(Cell (*grid)[GRID_COLS], bool (*visiting)[GRID_COLS]){
-    for(int i = 0; i < GRID_ROWS; ++i){
-        for(int k = 0; k < GRID_COLS; ++k){
-            if(grid[i][k].visiting){
-                visiting[i][k] = true;
-            }
-        }
-    }
-}
-
 // Marks a neighbour as a frontier cell if it exists and has not been visited yet
 void mark_visiting(Cell (*grid)[GRID_COLS], int neighbour_y, int neighbour_x, int parent_y, int parent_x){
     if(neighbour_y < 0 || neighbour_y >= GRID_ROWS || neighbour_x < 0 || neighbour_x >= GRID_COLS){
@@ -185,7 +175,6 @@ int main(int argv, char *args[]){
     int num;
 
     SDL_Point mouse;
-    SDL_Point parent_cell;
 
     SDL_Rect mouse_rect;
 
