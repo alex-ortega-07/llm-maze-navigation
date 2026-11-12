@@ -58,7 +58,7 @@ void draw_visiting_cell(SDL_Renderer *renderer, Cell (*grid)[GRID_COLS], SDL_Col
     for(int i = 0; i < GRID_ROWS; ++i){
         for(int k = 0; k < GRID_COLS; ++k){
             if(grid[i][k].visiting){
-                SDL_SetRenderDrawColor(renderer, CELL_VISITING.r, CELL_VISITING.g, CELL_VISITING.b, CELL_VISITING.a);
+                SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
                 SDL_Rect visiting {MARGIN + CELL_WIDTH * k + 1, MARGIN + CELL_WIDTH * i + 1, CELL_WIDTH - 1, CELL_WIDTH - 1};
                 SDL_RenderFillRect(renderer, &visiting);
             }
