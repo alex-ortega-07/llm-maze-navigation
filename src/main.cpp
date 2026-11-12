@@ -30,6 +30,7 @@ const SDL_Color CELL_VISITING = {50, 123, 168, 255};
 // Semi-transparent (alpha 120) so the background shows through the markers
 const SDL_Color CELL_START_WALL = {0, 255, 0, 120};
 const SDL_Color CELL_END_WALL = {255, 0, 0, 120};
+const SDL_Color PLAYER = {255, 220, 0, 255};
 const SDL_Color BACKGROUND = {97, 52, 235, 255};
 const SDL_Color SELECTED = {100, 100, 200, 255};
 
@@ -190,12 +191,49 @@ void pick_entrance_and_exit(Grid &grid, BorderOpening &entrance, BorderOpening &
     open_border_wall(grid, exit);
 }
 
-// Draws a filled square inside the cell at (y, x)
-void draw_marker(SDL_Renderer *renderer, int y, int x, SDL_Color color){
+// Returns true if the cell at (y, x) has no wall in that direction and the target cell is inside the grid
+bool can_move(const Grid &grid, int y, int x, Direction dir){
+    int rows = static_cast<int>(grid.size());
+    int cols = static_cast<int>(grid[0].size());
+    const Cell &cell = grid[y][x];
+
+    switch(dir){
+        case Direction::Up:    return !cell.wall.u && y - 1 >= 0;
+        case Direction::Down:  return !cell.wall.d && y + 1 < rows;
+        case Direction::Left:  return !cell.wall.l && x - 1 >= 0;
+        case Direction::Right: return !cell.wall.r && x + 1 < cols;
+    }
+
+    return false;
+}
+
+// Maps W/A/S/D (by physical key position) to a direction. Returns false for any other key.
+bool direction_from_key(SDL_Scancode key, Direction &dir){
+    switch(key){
+        case SDL_SCANCODE_W: dir = Direction::Up;    return true;
+        case SDL_SCANCODE_S: dir = Direction::Down;  return true;
+        case SDL_SCANCODE_A: dir = Direction::Left;  return true;
+        case SDL_SCANCODE_D: dir = Direction::Right; return true;
+        default:             return false;
+    }
+}
+
+void move(int &y, int &x, Direction dir){
+    switch(dir){
+        case Direction::Up:    --y; break;
+        case Direction::Down:  ++y; break;
+        case Direction::Left:  --x; break;
+        case Direction::Right: ++x; break;
+    }
+}
+
+// Draws a filled square inside the cell at (y, x), leaving `inset` pixels on each side
+void draw_marker(SDL_Renderer *renderer, int y, int x, SDL_Color color, int inset = 5){
     // Blending is needed for the alpha channel to have any effect
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
-    SDL_Rect marker {MARGIN + CELL_WIDTH * x + 5, MARGIN + CELL_WIDTH * y + 5, CELL_WIDTH - 10, CELL_WIDTH - 10};
+    SDL_Rect marker {MARGIN + CELL_WIDTH * x + inset, MARGIN + CELL_WIDTH * y + inset,
+                     CELL_WIDTH - 2 * inset, CELL_WIDTH - 2 * inset};
     SDL_RenderFillRect(renderer, &marker);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
 }
@@ -327,6 +365,9 @@ int main(int argc, char *argv[]){
     bool maze_finished = false;
     BorderOpening entrance, maze_exit;
 
+    int player_y = 0, player_x = 0;
+    bool reached_exit = false;
+
     std::vector<std::vector<int>> visiting_list;
 
     add_visiting(grid, cell_y, cell_x);
@@ -385,6 +426,9 @@ int main(int argc, char *argv[]){
         else if(!maze_finished){
             pick_entrance_and_exit(grid, entrance, maze_exit);
             maze_finished = true;
+
+            player_y = entrance.y;
+            player_x = entrance.x;
         }
 
         SDL_SetRenderDrawColor(renderer, WHITE.r, WHITE.g, WHITE.b, WHITE.a);
@@ -398,16 +442,31 @@ int main(int argc, char *argv[]){
         if(maze_finished){
             draw_marker(renderer, entrance.y, entrance.x, CELL_START_WALL);
             draw_marker(renderer, maze_exit.y, maze_exit.x, CELL_END_WALL);
+            draw_marker(renderer, player_y, player_x, PLAYER, 12);
         }
 
         if(keyboard_state[SDL_SCANCODE_ESCAPE]){
             running = false;
         }
 
-        SDL_PollEvent(&event);
+        // Handle every pending event so no key press is lost
+        while(SDL_PollEvent(&event)){
+            if(event.type == SDL_QUIT){
+                running = false;
+            }
 
-        if(event.type == SDL_QUIT){
-            running = false;
+            else if(event.type == SDL_KEYDOWN && maze_finished && !reached_exit){
+                Direction dir;
+
+                if(direction_from_key(event.key.keysym.scancode, dir) && can_move(grid, player_y, player_x, dir)){
+                    move(player_y, player_x, dir);
+
+                    if(player_y == maze_exit.y && player_x == maze_exit.x){
+                        reached_exit = true;
+                        std::cout << "You reached the exit!" << std::endl;
+                    }
+                }
+            }
         }
 
         SDL_RenderPresent(renderer);
