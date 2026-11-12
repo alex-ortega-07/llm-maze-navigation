@@ -27,8 +27,9 @@ const int MARGIN = 20;
 const SDL_Color BLACK = {0, 0, 0, 255};
 const SDL_Color WHITE = {255, 255, 255, 255};
 const SDL_Color CELL_VISITING = {50, 123, 168, 255};
-const SDL_Color CELL_START_WALL = {0, 255, 0, 255};
-const SDL_Color CELL_END_WALL = {255, 0, 0, 255};
+// Semi-transparent (alpha 120) so the background shows through the markers
+const SDL_Color CELL_START_WALL = {0, 255, 0, 120};
+const SDL_Color CELL_END_WALL = {255, 0, 0, 120};
 const SDL_Color BACKGROUND = {97, 52, 235, 255};
 const SDL_Color SELECTED = {100, 100, 200, 255};
 
@@ -137,6 +138,68 @@ void quit_wall(Grid &grid, int index_y, int index_x, Direction wall){
     }
 }
 
+// A cell on the edge of the grid and the outer wall that can be opened
+struct BorderOpening {
+    int y, x;
+    Direction side;
+};
+
+// Lists every outer wall that can be opened (corner cells appear twice, once per side)
+std::vector<BorderOpening> border_openings(const Grid &grid){
+    int rows = static_cast<int>(grid.size());
+    int cols = static_cast<int>(grid[0].size());
+
+    std::vector<BorderOpening> openings;
+
+    for(int x = 0; x < cols; ++x){
+        openings.push_back({0, x, Direction::Up});
+        openings.push_back({rows - 1, x, Direction::Down});
+    }
+
+    for(int y = 0; y < rows; ++y){
+        openings.push_back({y, 0, Direction::Left});
+        openings.push_back({y, cols - 1, Direction::Right});
+    }
+
+    return openings;
+}
+
+// Removes only the outer wall of a border cell (quit_wall would also touch a neighbour outside the grid)
+void open_border_wall(Grid &grid, const BorderOpening &opening){
+    Cell &cell = grid[opening.y][opening.x];
+
+    switch(opening.side){
+        case Direction::Up:    cell.wall.u = false; break;
+        case Direction::Down:  cell.wall.d = false; break;
+        case Direction::Left:  cell.wall.l = false; break;
+        case Direction::Right: cell.wall.r = false; break;
+    }
+}
+
+// Picks two different border cells at random and opens their outer walls
+void pick_entrance_and_exit(Grid &grid, BorderOpening &entrance, BorderOpening &exit){
+    std::vector<BorderOpening> openings = border_openings(grid);
+
+    entrance = openings[rand() % openings.size()];
+
+    do{
+        exit = openings[rand() % openings.size()];
+    } while(exit.y == entrance.y && exit.x == entrance.x);
+
+    open_border_wall(grid, entrance);
+    open_border_wall(grid, exit);
+}
+
+// Draws a filled square inside the cell at (y, x)
+void draw_marker(SDL_Renderer *renderer, int y, int x, SDL_Color color){
+    // Blending is needed for the alpha channel to have any effect
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
+    SDL_Rect marker {MARGIN + CELL_WIDTH * x + 5, MARGIN + CELL_WIDTH * y + 5, CELL_WIDTH - 10, CELL_WIDTH - 10};
+    SDL_RenderFillRect(renderer, &marker);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+}
+
 void draw_visiting_cell(SDL_Renderer *renderer, const Grid &grid, SDL_Color color){
     for(size_t i = 0; i < grid.size(); ++i){
         for(size_t k = 0; k < grid[i].size(); ++k){
@@ -237,30 +300,6 @@ int main(int argc, char *argv[]){
     int cell_x = rand() % GRID_COLS;
     int cell_y = rand() % GRID_ROWS;
 
-    Cell cell_start, cell_end;
-
-    int rand_num = 0;
-    if(rand_num == 0){
-        cell_start.posx = MARGIN + 5;
-        cell_start.posy = (rand() % GRID_ROWS) * CELL_WIDTH + MARGIN + 5;
-
-        cell_end.posx = MARGIN + (GRID_COLS - 1) * CELL_WIDTH + 5;
-        cell_end.posy = (rand() % GRID_ROWS) * CELL_WIDTH + MARGIN + 5;
-    }
-
-    else{
-        cell_start.posx = (rand() % GRID_COLS) * CELL_WIDTH + MARGIN + 5;
-        cell_start.posy = MARGIN + 5;
-
-        cell_end.posx = (rand() % GRID_COLS) * CELL_WIDTH + MARGIN + 5;
-        cell_end.posy = MARGIN + (GRID_ROWS - 1) * CELL_WIDTH + 5;
-    }
-
-    cell_start.width = cell_end.width = cell_start.height = cell_end.height = CELL_WIDTH - 10;
-
-    cell_start.color = CELL_START_WALL;
-    cell_end.color = CELL_END_WALL;
-
     Grid grid(GRID_ROWS, std::vector<Cell>(GRID_COLS));
 
     for(int i = 0; i < GRID_ROWS; ++i){
@@ -285,12 +324,8 @@ int main(int argc, char *argv[]){
 
     SDL_Point mouse;
 
-    SDL_Rect mouse_rect;
-
-    mouse_rect.x = cell_start.posx + cell_start.width / 2 - 10;
-    mouse_rect.y = cell_start.posy + cell_start.height / 2 - 10;
-    mouse_rect.w = 20;
-    mouse_rect.h = 20;
+    bool maze_finished = false;
+    BorderOpening entrance, maze_exit;
 
     std::vector<std::vector<int>> visiting_list;
 
@@ -347,12 +382,22 @@ int main(int argc, char *argv[]){
             add_visiting(grid, cell_y, cell_x);
         }
 
+        else if(!maze_finished){
+            pick_entrance_and_exit(grid, entrance, maze_exit);
+            maze_finished = true;
+        }
+
         SDL_SetRenderDrawColor(renderer, WHITE.r, WHITE.g, WHITE.b, WHITE.a);
 
         for(int i = 0; i < GRID_ROWS; ++i){
             for(int k = 0; k < GRID_COLS; ++k){
                 grid[i][k].create(renderer);
             }
+        }
+
+        if(maze_finished){
+            draw_marker(renderer, entrance.y, entrance.x, CELL_START_WALL);
+            draw_marker(renderer, maze_exit.y, maze_exit.x, CELL_END_WALL);
         }
 
         if(keyboard_state[SDL_SCANCODE_ESCAPE]){
