@@ -1,0 +1,103 @@
+# Design decisions
+
+This file records the decisions taken in the project and the reasons behind them, so it is clear not only *what* the code does but *why* it is built this way.
+
+To add a decision, append a new entry at the end with the next number, following the same structure: **Decision**, **Why**, and optionally **Details** and **Alternatives considered**.
+
+---
+
+## 1. Explicit Makefile, one rule per file
+**Date:** 2026-11-11 · **Commit:** `58d0d75`
+
+**Decision:** Build with a Makefile where every source file has its own written-out rule, instead of generic pattern rules and `wildcard`.
+
+**Why:** The project only has two source files, and an explicit Makefile can be read top to bottom without knowing make's special syntax (`%`, `$<`, `$@`, `wildcard`, `patsubst`). It also only recompiles what changed, and adds `-Wall -Wextra`.
+
+**Alternatives considered:** A compact version using `wildcard` and pattern rules, which picks up new files automatically. It may be worth switching to it if the project grows to many source files.
+
+**Consequence:** Every new `.cpp` file needs its own rule and must be added to the `maze.exe` rule.
+
+## 2. Makefile works from both PowerShell and MSYS2/Linux
+**Date:** 2026-11-11 · **Commit:** `58d0d75`
+
+**Decision:** Detect which `make` is running (`MAKE_HOST == Windows32` means `mingw32-make`) and use Windows `cmd` commands there (`if not exist ... mkdir`, `rmdir /s /q`, `del`), and Unix commands (`mkdir -p`, `rm -rf`) otherwise.
+
+**Why:** `mingw32-make` run from PowerShell has no `sh`, `rm` or `mkdir -p`. `make clean` failed, and `mkdir -p build` created a folder literally named `-p`.
+
+**Alternatives considered:** Hard-coding the path to MSYS2's `sh.exe` (machine-specific), or only supporting the MSYS2 terminal.
+
+## 3. Ignore build output in git
+**Date:** 2026-11-11 · **Commit:** `8ed0432`
+
+**Decision:** Add a `.gitignore` with `build/` and `maze.exe`.
+
+**Why:** Compiled files can be regenerated at any time and should not be committed.
+
+## 4. `Direction` enum instead of strings in `quit_wall`
+**Date:** 2026-11-11 · **Commit:** `93fcf20`
+
+**Decision:** Replace `quit_wall(..., char *wall)` and comparisons like `wall == "right"` with an `enum class Direction { Up, Down, Left, Right }`.
+
+**Why:** Comparing a `char*` with a string literal compares memory addresses, not text. It only worked because the compiler happened to reuse the same literal, and passing a literal to `char*` is not valid in modern C++. An enum is correct by construction and the compiler catches typos.
+
+## 5. Check grid bounds before reading neighbours
+**Date:** 2026-11-11 · **Commit:** `5d0e01c`
+
+**Decision:** Move the neighbour logic of `add_visiting` into a `mark_visiting` helper that checks the position is inside the grid **before** reading it.
+
+**Why:** The original code read `grid[y + 1][x]` first and checked the bounds afterwards, reading outside the array on the edges. With a fixed array this went unnoticed; with `std::vector` it can crash. The helper also removed four nearly identical blocks.
+
+## 6. Remove unused code
+**Date:** 2026-11-11 · **Commits:** `9089572`, `92bddc4`
+
+**Decision:** Remove an `add_visiting` overload and a `parent_cell` variable that were never used, and make `draw_visiting_cell` actually use its `color` parameter instead of a hard-coded constant.
+
+**Why:** Dead code and ignored parameters make the program harder to understand and hide bugs.
+
+## 7. Maze size from the command line
+**Date:** 2026-11-11 · **Commits:** `c3ae08a`, `88b1fe0`
+
+**Decision:** The maze size is chosen when running the program with `-w`/`--width` and `-h`/`--height` (default 20 × 10, allowed range 2–50). `--help` prints the usage. Invalid values or unknown options print an error and exit with code 1, before SDL is initialised.
+
+**Why:** Changing the size should not require editing the code and recompiling.
+
+**Details:**
+- The grid became a `std::vector<std::vector<Cell>>` (`Grid`), because a fixed array needs its size at compile time.
+- Values are parsed with `strtol`, not `atoi`, so input like `abc` or `20x` is rejected instead of silently becoming `0`.
+- The minimum is 2 so that the entrance and exit can be different cells. The maximum of 50 is a sanity limit; with 40 px cells, large values can still produce a window bigger than the screen.
+
+## 8. Entrance and exit on the border
+**Date:** 2026-11-12 · **Commit:** `4be8332`
+
+**Decision:** When the maze has finished generating, pick **two different border cells** at random as entrance and exit, and **remove their outer wall** so the opening is visible.
+
+**Why:** It looks like a classic maze and guarantees both ends are on the edge. Choosing them only after generation finishes keeps the generation animation unchanged.
+
+**Details:**
+- Corner cells can open on either of their two outer sides.
+- A dedicated `open_border_wall` is used instead of `quit_wall`, because `quit_wall` also modifies the neighbouring cell, which does not exist outside the grid.
+- The old `cell_start` / `cell_end` code, which was computed at start-up but never drawn, was removed.
+
+**Alternatives considered:** Any cell of the grid, including interior ones, marked only by colour.
+
+## 9. Semi-transparent markers
+**Date:** 2026-11-12 · **Commit:** `4be8332`
+
+**Decision:** Draw the entrance (green) and exit (red) as filled squares with alpha 120, enabling `SDL_BLENDMODE_BLEND` only while drawing them.
+
+**Why:** A softer look that lets the background show through. Blending must be enabled for SDL to use the alpha channel; it is switched off afterwards so nothing else is affected.
+
+## 10. Player square moved with WASD
+**Date:** 2026-11-12 · **Commit:** `3e70cc8`
+
+**Decision:** Add a separate yellow, smaller player square that starts on the entrance once the maze is finished. It moves one cell per key press with W/A/S/D (holding a key repeats), cannot go through walls, and stops when it reaches the exit, printing `You reached the exit!` to the console.
+
+**Why:** This is the first step towards navigating the maze: it defines the moves (up, down, left, right) and the rules (walls block movement) that an automated agent will later use.
+
+**Details:**
+- Keys are read by **scancode** (physical key position), so WASD works the same on any keyboard layout (Spanish, AZERTY…).
+- `can_move` also checks the grid bounds, because the entrance and exit have an open outer wall and the player could otherwise walk out of the maze.
+- The event loop now processes **every** pending event each frame (`while(SDL_PollEvent(...))`). Before, it read only one event per frame and checked `event.type` even when no event had arrived, so key presses could be lost.
+- The player is drawn smaller than the markers so both are visible on the same cell.
+
+**Alternatives considered:** Moving the green entrance marker itself; allowing the player to pass through walls.
