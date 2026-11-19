@@ -102,22 +102,23 @@ To add a decision, append a new entry at the end with the next number, following
 
 **Alternatives considered:** Moving the green entrance marker itself; allowing the player to pass through walls.
 
-## 11. Message format between the environment and the supervisor
-**Date:** 2026-11-18 · **Status:** proposed, not implemented yet
+## 11. Communication between the environment and the supervisor
+**Date:** 2026-11-18 · **Updated:** 2026-11-19 · **Status:** decided; implemented on the supervisor side (`src/supervisor.py`), pending in `maze.cpp`
 
-**Decision:** The environment (`maze.cpp`) and the supervisor exchange **JSON messages, one per line** ([JSON Lines](https://jsonlines.org/)), encoded in UTF-8. Every message has a `type` field that says what kind of message it is. There are two message types:
+**Decision:** The supervisor launches `maze.exe --agent` as a **subprocess** and both sides communicate through **standard input/output**: the supervisor writes actions to the maze's stdin and reads observations from its stdout. Messages are **JSON, one per line** ([JSON Lines](https://jsonlines.org/)), encoded in UTF-8. Every message has a `type` field that says what kind of message it is. There are two message types:
 
 **`observation`** — environment → supervisor. Sent once the maze has finished generating, and again after every action:
 ```json
-{"type": "observation", "position": [3, 0], "valid_actions": ["up", "right"], "step": 0, "done": false}
+{"type": "observation", "position": [3, 0], "valid_actions": ["up", "right"], "step": 0, "done": false, "last_action_valid": true}
 ```
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `position` | `[row, col]` | Current player cell, with `[0, 0]` at the top-left |
 | `valid_actions` | list of strings | Moves not blocked by a wall: `"up"`, `"down"`, `"left"`, `"right"` |
-| `step` | integer | Number of actions taken so far in this episode |
+| `step` | integer | Number of actions received so far in this episode, including invalid ones |
 | `done` | boolean | `true` when the player has reached the exit |
+| `last_action_valid` | boolean | `false` if the last action was blocked by a wall or was not a valid action; `true` otherwise (and in the first observation) |
 | `exit` | `[row, col]` | *Optional.* Exit cell, only if it is revealed to the agent |
 | `grid_size` | `[rows, cols]` | *Optional.* Maze size, only if it is revealed to the agent |
 
@@ -130,14 +131,22 @@ To add a decision, append a new entry at the end with the next number, following
 | --- | --- | --- |
 | `action` | string | One of `"up"`, `"down"`, `"left"`, `"right"` |
 
+**Invalid actions:** if the action is blocked by a wall, or the message is not a valid action (unknown value, malformed JSON...), the player **does not move**, `step` **still increases by 1**, and the environment replies with a normal observation with `last_action_valid: false`.
+
+**Logs:** in `--agent` mode, stdout is used **only** for JSON messages. Any other output from `maze.exe` (errors, `You reached the exit!`) goes to stderr.
+
 **Why:**
+- **Standard input/output** is the simplest transport: no network code, the supervisor controls the maze's lifetime, and messages can be tested by running `maze.exe --agent` by hand and typing them.
 - **JSON** can be read and written easily from both C++ and Python, and is human-readable, so messages can be inspected by hand while debugging.
 - **One message per line** makes it trivial to know where a message ends: the receiver just reads a line.
-- **The `type` field** allows new message kinds to be added later (e.g. reset, error) without breaking the existing ones.
-- **The fields match `Observation` and `Action` in `src/agent.py`**, so the supervisor can pass the parsed message to the agent with almost no conversion. Coordinates are sent as JSON arrays and become tuples on the Python side.
+- **The `type` field** allows new message kinds to be added later (e.g. reset) without breaking the existing ones.
+- **The fields match `Observation` and `Action` in `src/agents/agent.py`**, so the supervisor can pass the parsed message to the agent with almost no conversion. Coordinates are sent as JSON arrays and become tuples on the Python side.
 - **Actions are lowercase strings** (the values of the `Action` enum) rather than numbers or WASD keys, so the messages are self-explanatory and independent of the keyboard controls.
+- **Invalid actions cost a step** instead of being rejected, so an agent that keeps choosing impossible moves (e.g. an LLM that ignores the walls) is penalised and cannot get stuck forever: the supervisor's step limit still applies. `last_action_valid` lets the supervisor count these mistakes as a metric.
+
+**Alternatives considered:**
+- A TCP socket on `localhost`: more flexible (separate processes, even separate machines) but more complex. It could replace stdin/stdout later by writing another `Connection` in the supervisor.
+- For invalid actions: not counting the step (an agent could loop forever on invalid moves), or replying with a separate `error` message (one more message type to handle on both sides).
 
 **Open questions:**
-- Transport: standard input/output (the supervisor launches `maze.exe` as a subprocess) or a TCP socket on `localhost`.
 - Whether the agent may see the whole maze, and whether `exit` and `grid_size` are revealed.
-- What the environment does when it receives an invalid or unknown action.
