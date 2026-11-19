@@ -101,3 +101,43 @@ To add a decision, append a new entry at the end with the next number, following
 - The player is drawn smaller than the markers so both are visible on the same cell.
 
 **Alternatives considered:** Moving the green entrance marker itself; allowing the player to pass through walls.
+
+## 11. Message format between the environment and the supervisor
+**Date:** 2026-11-18 · **Status:** proposed, not implemented yet
+
+**Decision:** The environment (`maze.cpp`) and the supervisor exchange **JSON messages, one per line** ([JSON Lines](https://jsonlines.org/)), encoded in UTF-8. Every message has a `type` field that says what kind of message it is. There are two message types:
+
+**`observation`** — environment → supervisor. Sent once the maze has finished generating, and again after every action:
+```json
+{"type": "observation", "position": [3, 0], "valid_actions": ["up", "right"], "step": 0, "done": false}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `position` | `[row, col]` | Current player cell, with `[0, 0]` at the top-left |
+| `valid_actions` | list of strings | Moves not blocked by a wall: `"up"`, `"down"`, `"left"`, `"right"` |
+| `step` | integer | Number of actions taken so far in this episode |
+| `done` | boolean | `true` when the player has reached the exit |
+| `exit` | `[row, col]` | *Optional.* Exit cell, only if it is revealed to the agent |
+| `grid_size` | `[rows, cols]` | *Optional.* Maze size, only if it is revealed to the agent |
+
+**`action`** — supervisor → environment. Sent after the agent has chosen a move:
+```json
+{"type": "action", "action": "right"}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `action` | string | One of `"up"`, `"down"`, `"left"`, `"right"` |
+
+**Why:**
+- **JSON** can be read and written easily from both C++ and Python, and is human-readable, so messages can be inspected by hand while debugging.
+- **One message per line** makes it trivial to know where a message ends: the receiver just reads a line.
+- **The `type` field** allows new message kinds to be added later (e.g. reset, error) without breaking the existing ones.
+- **The fields match `Observation` and `Action` in `src/agent.py`**, so the supervisor can pass the parsed message to the agent with almost no conversion. Coordinates are sent as JSON arrays and become tuples on the Python side.
+- **Actions are lowercase strings** (the values of the `Action` enum) rather than numbers or WASD keys, so the messages are self-explanatory and independent of the keyboard controls.
+
+**Open questions:**
+- Transport: standard input/output (the supervisor launches `maze.exe` as a subprocess) or a TCP socket on `localhost`.
+- Whether the agent may see the whole maze, and whether `exit` and `grid_size` are revealed.
+- What the environment does when it receives an invalid or unknown action.
