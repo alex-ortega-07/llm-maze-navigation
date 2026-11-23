@@ -2,14 +2,17 @@
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+#include <cctype>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <string>
 #include <time.h>
 #include <vector>
 
 #include "Cell.hpp"
+#include "StdinReader.hpp"
 
 using Grid = std::vector<std::vector<Cell>>;
 
@@ -40,6 +43,7 @@ const int FRAME_DELAY = 1000 / FPS;
 struct Options {
     int cols = DEFAULT_GRID_COLS;
     int rows = DEFAULT_GRID_ROWS;
+    bool agent_mode = false;
 };
 
 enum class ParseResult { Ok, Help, Error };
@@ -60,6 +64,8 @@ void print_usage(const char *program_path){
               << ", default " << DEFAULT_GRID_COLS << ")\n"
               << "  -h, --height <n>   Number of rows    (" << MIN_GRID_SIZE << "-" << MAX_GRID_SIZE
               << ", default " << DEFAULT_GRID_ROWS << ")\n"
+              << "      --agent        Agent mode: read actions from stdin and write\n"
+              << "                     observations to stdout (JSON Lines); WASD is disabled\n"
               << "      --help         Show this help and exit\n";
 }
 
@@ -87,6 +93,11 @@ ParseResult parse_args(int argc, char *argv[], Options &options){
 
         if(std::strcmp(arg, "--help") == 0){
             return ParseResult::Help;
+        }
+
+        if(std::strcmp(arg, "--agent") == 0){
+            options.agent_mode = true;
+            continue;
         }
 
         bool is_width = std::strcmp(arg, "-w") == 0 || std::strcmp(arg, "--width") == 0;
@@ -227,6 +238,93 @@ void move(int &y, int &x, Direction dir){
     }
 }
 
+// ---------------------------------------------------------------------------
+// Agent mode: communication with the supervisor (see DECISIONS.md, decision 11)
+// ---------------------------------------------------------------------------
+
+const char *direction_name(Direction dir){
+    switch(dir){
+        case Direction::Up:    return "up";
+        case Direction::Down:  return "down";
+        case Direction::Left:  return "left";
+        case Direction::Right: return "right";
+    }
+
+    return "";
+}
+
+bool direction_from_name(const std::string &name, Direction &dir){
+    if(name == "up")    { dir = Direction::Up;    return true; }
+    if(name == "down")  { dir = Direction::Down;  return true; }
+    if(name == "left")  { dir = Direction::Left;  return true; }
+    if(name == "right") { dir = Direction::Right; return true; }
+    return false;
+}
+
+// Reads the string value of `key` from a flat JSON object such as {"type": "action", "action": "up"}.
+// Minimal on purpose: it does not support escaped quotes or nested objects, which the protocol does not use.
+bool json_string_field(const std::string &json, const std::string &key, std::string &value){
+    const std::string quoted_key = "\"" + key + "\"";
+    size_t pos = json.find(quoted_key);
+
+    while(pos != std::string::npos){
+        size_t i = pos + quoted_key.size();
+
+        while(i < json.size() && std::isspace(static_cast<unsigned char>(json[i]))) ++i;
+
+        // The same text can also appear as a value ("type": "action"), so only accept it if a ':' follows
+        if(i < json.size() && json[i] == ':'){
+            ++i;
+            while(i < json.size() && std::isspace(static_cast<unsigned char>(json[i]))) ++i;
+
+            if(i >= json.size() || json[i] != '"'){
+                return false;
+            }
+
+            size_t end = json.find('"', i + 1);
+            if(end == std::string::npos){
+                return false;
+            }
+
+            value = json.substr(i + 1, end - i - 1);
+            return true;
+        }
+
+        pos = json.find(quoted_key, pos + 1);
+    }
+
+    return false;
+}
+
+// Returns true and sets `dir` if the line is a valid {"type": "action", "action": "<direction>"} message
+bool parse_action_message(const std::string &line, Direction &dir){
+    std::string type, action;
+
+    return json_string_field(line, "type", type) && type == "action"
+        && json_string_field(line, "action", action) && direction_from_name(action, dir);
+}
+
+// Writes one observation message to stdout. std::endl flushes it so the supervisor receives it immediately.
+void send_observation(const Grid &grid, int y, int x, int step, bool done, bool last_action_valid){
+    std::string valid_actions;
+    const Direction all_directions[] = {Direction::Up, Direction::Down, Direction::Left, Direction::Right};
+
+    for(Direction dir : all_directions){
+        if(can_move(grid, y, x, dir)){
+            if(!valid_actions.empty()) valid_actions += ", ";
+            valid_actions += "\"" + std::string(direction_name(dir)) + "\"";
+        }
+    }
+
+    std::cout << "{\"type\": \"observation\""
+              << ", \"position\": [" << y << ", " << x << "]"
+              << ", \"valid_actions\": [" << valid_actions << "]"
+              << ", \"step\": " << step
+              << ", \"done\": " << (done ? "true" : "false")
+              << ", \"last_action_valid\": " << (last_action_valid ? "true" : "false")
+              << "}" << std::endl;
+}
+
 // Draws a filled square inside the cell at (y, x), leaving `inset` pixels on each side
 void draw_marker(SDL_Renderer *renderer, int y, int x, SDL_Color color, int inset = 5){
     // Blending is needed for the alpha channel to have any effect
@@ -311,21 +409,23 @@ int main(int argc, char *argv[]){
     const int SCREEN_WIDTH = CELL_WIDTH * GRID_COLS + MARGIN * 2;
     const int SCREEN_HEIGHT = CELL_WIDTH * GRID_ROWS + MARGIN * 2;
 
+    // Logs go to stderr: in agent mode stdout is reserved for JSON messages
     if(SDL_Init(SDL_INIT_VIDEO) < 0){
+        std::cerr << "SDL could not be initialized. SDL_Error: " << SDL_GetError() << std::endl;
         return 1;
     }
 
     SDL_Window *win = SDL_CreateWindow("Maze generation algorithm", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
 
     if(win == NULL){
-        std::cout << "Window could not be created. SDL_Error: " << SDL_GetError() << std::endl;
+        std::cerr << "Window could not be created. SDL_Error: " << SDL_GetError() << std::endl;
         return -1;
     }
 
     SDL_Renderer *renderer = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
 
     if(TTF_Init()){
-        std::cout << "TTF could not be initialized. TTF_Error" << SDL_GetError() << std::endl;
+        std::cerr << "TTF could not be initialized. TTF_Error" << SDL_GetError() << std::endl;
         return -1;
     }
 
@@ -367,6 +467,14 @@ int main(int argc, char *argv[]){
 
     int player_y = 0, player_x = 0;
     bool reached_exit = false;
+
+    // Agent mode state
+    int step = 0;
+    StdinReader stdin_reader;
+
+    if(options.agent_mode){
+        stdin_reader.start();
+    }
 
     std::vector<std::vector<int>> visiting_list;
 
@@ -429,6 +537,39 @@ int main(int argc, char *argv[]){
 
             player_y = entrance.y;
             player_x = entrance.x;
+
+            if(options.agent_mode){
+                send_observation(grid, player_y, player_x, step, false, true);
+            }
+        }
+
+        // Agent mode: apply every action received since the last frame and reply with an observation
+        if(options.agent_mode && maze_finished && !reached_exit){
+            std::string line;
+
+            while(!reached_exit && stdin_reader.pop(line)){
+                Direction dir;
+                // Invalid actions (blocked by a wall or malformed) do not move the player but still count as a step
+                bool valid = parse_action_message(line, dir) && can_move(grid, player_y, player_x, dir);
+
+                if(valid){
+                    move(player_y, player_x, dir);
+                }
+
+                ++step;
+
+                if(player_y == maze_exit.y && player_x == maze_exit.x){
+                    reached_exit = true;
+                    std::cerr << "You reached the exit!" << std::endl;
+                }
+
+                send_observation(grid, player_y, player_x, step, reached_exit, valid);
+            }
+        }
+
+        // Agent mode: stop when the supervisor closes the connection
+        if(options.agent_mode && stdin_reader.finished()){
+            running = false;
         }
 
         SDL_SetRenderDrawColor(renderer, WHITE.r, WHITE.g, WHITE.b, WHITE.a);
@@ -455,7 +596,8 @@ int main(int argc, char *argv[]){
                 running = false;
             }
 
-            else if(event.type == SDL_KEYDOWN && maze_finished && !reached_exit){
+            // WASD only in manual mode; in agent mode the moves come from the supervisor
+            else if(event.type == SDL_KEYDOWN && !options.agent_mode && maze_finished && !reached_exit){
                 Direction dir;
 
                 if(direction_from_key(event.key.keysym.scancode, dir) && can_move(grid, player_y, player_x, dir)){
@@ -463,7 +605,7 @@ int main(int argc, char *argv[]){
 
                     if(player_y == maze_exit.y && player_x == maze_exit.x){
                         reached_exit = true;
-                        std::cout << "You reached the exit!" << std::endl;
+                        std::cerr << "You reached the exit!" << std::endl;
                     }
                 }
             }
