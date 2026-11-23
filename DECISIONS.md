@@ -103,7 +103,7 @@ To add a decision, append a new entry at the end with the next number, following
 **Alternatives considered:** Moving the green entrance marker itself; allowing the player to pass through walls.
 
 ## 11. Communication between the environment and the supervisor
-**Date:** 2026-11-18 · **Updated:** 2026-11-19 · **Status:** decided; implemented on the supervisor side (`src/supervisor.py`), pending in `maze.cpp`
+**Date:** 2026-11-18 · **Updated:** 2026-11-23 · **Status:** implemented on both sides (`src/supervisor.py` and `src/main.cpp`)
 
 **Decision:** The supervisor launches `maze.exe --agent` as a **subprocess** and both sides communicate through **standard input/output**: the supervisor writes actions to the maze's stdin and reads observations from its stdout. Messages are **JSON, one per line** ([JSON Lines](https://jsonlines.org/)), encoded in UTF-8. Every message has a `type` field that says what kind of message it is. There are two message types:
 
@@ -134,6 +134,17 @@ To add a decision, append a new entry at the end with the next number, following
 **Invalid actions:** if the action is blocked by a wall, or the message is not a valid action (unknown value, malformed JSON...), the player **does not move**, `step` **still increases by 1**, and the environment replies with a normal observation with `last_action_valid: false`.
 
 **Logs:** in `--agent` mode, stdout is used **only** for JSON messages. Any other output from `maze.exe` (errors, `You reached the exit!`) goes to stderr.
+
+**Implementation:**
+- **`maze.exe --agent`** disables the WASD controls. It sends the first observation once the maze has finished generating, and one more after each action it receives.
+- **stdin is read in a background thread** (`StdinReader`, in `src/StdinReader.hpp/.cpp`), which puts each line in a queue protected by a mutex. The SDL loop takes the pending lines once per frame, so the window never freezes while waiting for the supervisor.
+- **Actions are parsed with a minimal hand-written JSON reader** (`json_string_field` in `src/main.cpp`), not a library. It only handles flat objects with string values and no escaped quotes, which is all the `action` message needs. Observations are written with `std::cout` and flushed with `std::endl` so the supervisor receives them immediately.
+- **`maze.exe` exits on its own when stdin is closed**, so it does not stay open if the supervisor stops.
+- **`MazeConnection` launches `maze.exe` with an absolute path**, because on Windows Python does not look for a bare executable name in the current directory.
+- **Limitations:**
+  - At most about one action is applied per frame (60 FPS), so long episodes take several seconds.
+  - `exit` and `grid_size` are not sent yet.
+  - The supervisor does not use `last_action_valid` yet: `to_observation` drops it and `EpisodeResult` does not count invalid actions.
 
 **Why:**
 - **Standard input/output** is the simplest transport: no network code, the supervisor controls the maze's lifetime, and messages can be tested by running `maze.exe --agent` by hand and typing them.
