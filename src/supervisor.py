@@ -10,6 +10,7 @@ Messages follow the JSON Lines format described in DECISIONS.md (decision 11).
 """
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import Protocol
@@ -29,8 +30,9 @@ class MazeConnection:
     """Runs maze.exe as a subprocess and talks to it through stdin/stdout, one JSON message per line."""
 
     def __init__(self, exe_path: str, args: list[str] | None = None) -> None:
+        # Absolute path: on Windows, Python does not look for a bare "maze.exe" in the current directory
         self.process = subprocess.Popen(
-            [exe_path, "--agent", *(args or [])],
+            [os.path.abspath(exe_path), "--agent", *(args or [])],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
