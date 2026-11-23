@@ -126,5 +126,7 @@ class MyAgent(Agent):
 └── Makefile
 ```
 
-## Screenshots
+## Demo
+*Maze generation only (recorded before the player and agent mode were added).*
+
 https://user-images.githubusercontent.com/85643095/198393196-648f2b0f-da55-4ce7-8859-6fb488ab3045.mp4
