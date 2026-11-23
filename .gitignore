@@ -1,3 +1,5 @@
 # Build output
 build/
 maze.exe
+
+__pycache__/
