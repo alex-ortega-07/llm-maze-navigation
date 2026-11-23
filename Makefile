@@ -34,13 +34,13 @@ all: maze.exe
 
 
 # --- Final step: link the .o files into the executable ---
-maze.exe: build/main.o build/Cell.o
-	$(CXX) build/main.o build/Cell.o -o maze.exe $(LIBS)
+maze.exe: build/main.o build/Cell.o build/StdinReader.o
+	$(CXX) build/main.o build/Cell.o build/StdinReader.o -o maze.exe $(LIBS)
 
 
 # --- Compile main.cpp ---
-# Rebuilt if main.cpp or Cell.hpp changes (main.cpp includes it)
-build/main.o: src/main.cpp src/Cell.hpp
+# Rebuilt if main.cpp or any header it includes changes
+build/main.o: src/main.cpp src/Cell.hpp src/StdinReader.hpp
 	$(MKDIR_BUILD)
 	$(CXX) $(CXXFLAGS) -c src/main.cpp -o build/main.o
 
@@ -49,6 +49,12 @@ build/main.o: src/main.cpp src/Cell.hpp
 build/Cell.o: src/Cell.cpp src/Cell.hpp
 	$(MKDIR_BUILD)
 	$(CXX) $(CXXFLAGS) -c src/Cell.cpp -o build/Cell.o
+
+
+# --- Compile StdinReader.cpp ---
+build/StdinReader.o: src/StdinReader.cpp src/StdinReader.hpp
+	$(MKDIR_BUILD)
+	$(CXX) $(CXXFLAGS) -c src/StdinReader.cpp -o build/StdinReader.o
 
 
 # --- Shortcuts ---
