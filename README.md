@@ -91,15 +91,27 @@ RandomAgent(name='RandomAgent'): reached_exit=True steps=20
 
 | Option | Description |
 | --- | --- |
+| `--agent <name>` | Agent to run: `random` (default), `right-hand` or `left-hand` |
 | `--exe <path>` | Path to the maze executable (default `maze.exe`) |
 | `-w`, `--width <n>` | Number of columns |
 | `--height <n>` | Number of rows (there is no `-h`, which shows the help) |
 | `--max-steps <n>` | Stop the episode after this many actions (default 500) |
 
-The episode currently uses `RandomAgent`, which picks a random move among the ones not blocked by a wall. It is meant to test the whole system and as a baseline for other agents.
+### Available agents
+| Name | Class | Behaviour |
+| --- | --- | --- |
+| `random` | `RandomAgent` | Picks a random move among the ones not blocked by a wall. Useful to test the whole system and as a baseline |
+| `right-hand` | `WallFollowerAgent("right")` | Wall follower: turns right if it can, otherwise goes straight, otherwise turns left, otherwise goes back |
+| `left-hand` | `WallFollowerAgent("left")` | Same, preferring left turns |
+
+The generated mazes have no cycles (they are "perfect" mazes), so the wall followers always reach the exit, in at most 2 × (cells − 1) steps. In a maze with cycles they could loop forever.
+
+```bash
+python src/run.py --agent right-hand --width 20 --height 10 --max-steps 2000
+```
 
 ### Writing a new agent
-Create a module in `src/agents/` with a subclass of `Agent` (from `src/agents/agent.py`) that implements `act`:
+Create a module in `src/agents/` with a subclass of `Agent` (from `src/agents/agent.py`) that implements `act`, and add it to the `AGENTS` dictionary in `src/run.py` so it can be chosen with `--agent`:
 
 ```python
 from agents.agent import Action, Agent, Observation
@@ -121,7 +133,8 @@ class MyAgent(Agent):
 │   ├── run.py              # Entry point to run an episode
 │   └── agents/
 │       ├── agent.py        # Abstract Agent, Action and Observation
-│       └── random_agent.py # RandomAgent
+│       ├── random_agent.py # RandomAgent
+│       └── wall_follower_agent.py # WallFollowerAgent (right-hand / left-hand rule)
 ├── DECISIONS.md            # Design decisions and the reasons behind them
 └── Makefile
 ```
