@@ -4,6 +4,7 @@ Usage:
     python src/run.py --width 10 --height 5
     python src/run.py --agent right-hand --width 10 --height 5
     python src/run.py --agent right-hand --width 10 --height 5 --seed 42
+    python src/run.py --agent right-hand --width 20 --height 10 --fast
 """
 
 import argparse
@@ -44,6 +45,7 @@ def main() -> None:
     parser.add_argument("--height", type=int, help="number of rows")
     parser.add_argument("--max-steps", type=int, default=500, help="stop the episode after this many actions")
     parser.add_argument("--seed", type=seed_type, help="maze seed; the same seed and size give the same maze")
+    parser.add_argument("--fast", action="store_true", help="generate the maze instantly and do not limit the agent to one step per frame")
     args = parser.parse_args()
 
     maze_args = []
@@ -53,6 +55,8 @@ def main() -> None:
         maze_args += ["--height", str(args.height)]
     if args.seed is not None:
         maze_args += ["--seed", str(args.seed)]
+    if args.fast:
+        maze_args.append("--fast")
 
     connection = MazeConnection(args.exe, maze_args)
     agent: Agent = AGENTS[args.agent]()
