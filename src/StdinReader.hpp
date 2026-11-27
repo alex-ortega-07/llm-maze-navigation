@@ -1,6 +1,6 @@
 #pragma once
 
-#include <atomic>
+#include <condition_variable>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -16,14 +16,19 @@ class StdinReader {
         // Takes the oldest pending line. Returns false if there is none.
         bool pop(std::string &line);
 
+        // Waits up to `timeout_ms` milliseconds until a line is available or stdin is closed.
+        // Returns true if there is something to handle (a line or the end of stdin).
+        bool wait_for_line(int timeout_ms);
+
         // True once stdin has been closed and every line has been taken
         bool finished();
 
     private:
         struct State {
             std::mutex mutex;
+            std::condition_variable line_available;
             std::deque<std::string> lines;
-            std::atomic<bool> closed{false};
+            bool closed = false;  // protected by `mutex`
         };
 
         std::shared_ptr<State> state_ = std::make_shared<State>();

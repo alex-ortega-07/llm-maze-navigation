@@ -1,5 +1,6 @@
 #include "StdinReader.hpp"
 
+#include <chrono>
 #include <iostream>
 #include <thread>
 
@@ -12,10 +13,18 @@ void StdinReader::start(){
             // The supervisor may send "\r\n" line endings on Windows
             if(!line.empty() && line.back() == '\r') line.pop_back();
 
-            std::lock_guard<std::mutex> lock(state->mutex);
-            state->lines.push_back(line);
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                state->lines.push_back(line);
+            }
+            state->line_available.notify_one();
         }
-        state->closed = true;
+
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->closed = true;
+        }
+        state->line_available.notify_one();
     }).detach();
 }
 
@@ -26,6 +35,14 @@ bool StdinReader::pop(std::string &line){
     line = state_->lines.front();
     state_->lines.pop_front();
     return true;
+}
+
+bool StdinReader::wait_for_line(int timeout_ms){
+    std::unique_lock<std::mutex> lock(state_->mutex);
+
+    return state_->line_available.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this]{
+        return !state_->lines.empty() || state_->closed;
+    });
 }
 
 bool StdinReader::finished(){
