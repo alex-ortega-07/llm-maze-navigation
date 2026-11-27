@@ -74,6 +74,7 @@ maze.exe --help
 | `-h`, `--height <n>` | Number of rows |
 | `--agent` | Agent mode: read actions from stdin and write observations to stdout; WASD is disabled. Used by the supervisor |
 | `--seed <n>` | Random seed (0–4294967295). The same seed and size always produce the same maze, entrance and exit. Without it, the current time is used; the seed is printed to the console either way, so any maze can be reproduced |
+| `--fast` | Generate the maze instantly instead of animating it (a seed gives the same maze with or without it). In agent mode, also reply to each action as soon as it arrives instead of once per frame |
 | `--help` | Show the help and exit |
 
 Each cell is 40 px wide, so large values can make the window bigger than the screen.
@@ -99,6 +100,7 @@ RandomAgent(name='RandomAgent'): reached_exit=True steps=20
 | `--height <n>` | Number of rows (there is no `-h`, which shows the help) |
 | `--max-steps <n>` | Stop the episode after this many actions (default 500) |
 | `--seed <n>` | Maze seed (0–4294967295), passed to `maze.exe`. Use the same seed and size to compare agents on the same maze |
+| `--fast` | Passes `--fast` to `maze.exe`: no generation animation and no limit of one step per frame. Use it for experiments; leave it out to watch the agent move |
 
 ### Available agents
 | Name | Class | Behaviour |
@@ -112,6 +114,8 @@ The generated mazes have no cycles (they are "perfect" mazes), so the wall follo
 ```bash
 python src/run.py --agent right-hand --width 20 --height 10 --max-steps 2000
 ```
+
+By default the maze generation is animated and the agent moves at most one cell per frame (60 per second), so you can watch it. Add `--fast` to run the same episode in a fraction of a second (for example, 0.2 s instead of 6.3 s for 174 steps on a 20 × 10 maze).
 
 To compare agents on the same maze, give them the same `--seed` and size:
 
