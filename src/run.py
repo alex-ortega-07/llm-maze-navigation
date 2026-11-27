@@ -3,6 +3,7 @@
 Usage:
     python src/run.py --width 10 --height 5
     python src/run.py --agent right-hand --width 10 --height 5
+    python src/run.py --agent right-hand --width 10 --height 5 --seed 42
 """
 
 import argparse
@@ -19,6 +20,21 @@ AGENTS = {
     "left-hand": lambda: WallFollowerAgent("left"),
 }
 
+MAX_SEED = 2**32 - 1  # maze.exe stores the seed in an unsigned int
+
+
+def seed_type(text: str) -> int:
+    """argparse type: an integer between 0 and MAX_SEED, checked here so errors appear before maze.exe starts."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{text}' is not an integer")
+
+    if not 0 <= value <= MAX_SEED:
+        raise argparse.ArgumentTypeError(f"must be between 0 and {MAX_SEED}")
+
+    return value
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run an agent on the maze.")
@@ -27,6 +43,7 @@ def main() -> None:
     parser.add_argument("-w", "--width", type=int, help="number of columns")
     parser.add_argument("--height", type=int, help="number of rows")
     parser.add_argument("--max-steps", type=int, default=500, help="stop the episode after this many actions")
+    parser.add_argument("--seed", type=seed_type, help="maze seed; the same seed and size give the same maze")
     args = parser.parse_args()
 
     maze_args = []
@@ -34,6 +51,8 @@ def main() -> None:
         maze_args += ["--width", str(args.width)]
     if args.height is not None:
         maze_args += ["--height", str(args.height)]
+    if args.seed is not None:
+        maze_args += ["--seed", str(args.seed)]
 
     connection = MazeConnection(args.exe, maze_args)
     agent: Agent = AGENTS[args.agent]()
