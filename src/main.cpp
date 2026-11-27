@@ -4,6 +4,7 @@
 #include <SDL2/SDL_ttf.h>
 #include <cctype>
 #include <cerrno>
+#include <climits>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -44,6 +45,8 @@ struct Options {
     int cols = DEFAULT_GRID_COLS;
     int rows = DEFAULT_GRID_ROWS;
     bool agent_mode = false;
+    bool has_seed = false;
+    unsigned int seed = 0;
 };
 
 enum class ParseResult { Ok, Help, Error };
@@ -66,6 +69,8 @@ void print_usage(const char *program_path){
               << ", default " << DEFAULT_GRID_ROWS << ")\n"
               << "      --agent        Agent mode: read actions from stdin and write\n"
               << "                     observations to stdout (JSON Lines); WASD is disabled\n"
+              << "      --seed <n>     Random seed (0-" << UINT_MAX << "). The same seed and size\n"
+              << "                     always produce the same maze, entrance and exit\n"
               << "      --help         Show this help and exit\n";
 }
 
@@ -87,6 +92,25 @@ bool parse_grid_size(const char *text, int &out){
     return true;
 }
 
+// Converts text to an unsigned int seed. Returns false if invalid.
+bool parse_seed(const char *text, unsigned int &out){
+    // strtoul would silently accept negative numbers by wrapping them around
+    if(text[0] == '-'){
+        return false;
+    }
+
+    char *end = nullptr;
+    errno = 0;
+    unsigned long value = std::strtoul(text, &end, 10);
+
+    if(end == text || *end != '\0' || errno == ERANGE || value > UINT_MAX){
+        return false;
+    }
+
+    out = static_cast<unsigned int>(value);
+    return true;
+}
+
 ParseResult parse_args(int argc, char *argv[], Options &options){
     for(int i = 1; i < argc; ++i){
         const char *arg = argv[i];
@@ -97,6 +121,24 @@ ParseResult parse_args(int argc, char *argv[], Options &options){
 
         if(std::strcmp(arg, "--agent") == 0){
             options.agent_mode = true;
+            continue;
+        }
+
+        if(std::strcmp(arg, "--seed") == 0){
+            if(i + 1 >= argc){
+                std::cerr << "Missing value for " << arg << "\n";
+                return ParseResult::Error;
+            }
+
+            const char *value = argv[++i];
+
+            if(!parse_seed(value, options.seed)){
+                std::cerr << "Invalid value for " << arg << ": '" << value << "' (must be a number between 0 and "
+                          << UINT_MAX << ")\n";
+                return ParseResult::Error;
+            }
+
+            options.has_seed = true;
             continue;
         }
 
@@ -434,7 +476,10 @@ int main(int argc, char *argv[]){
     SDL_SetWindowOpacity(win, 0.8);
     SDL_ShowCursor(SDL_DISABLE);
 
-    srand(time(NULL));
+    // Without --seed, use the current time and log it so the maze can be reproduced later
+    unsigned int seed = options.has_seed ? options.seed : static_cast<unsigned int>(time(NULL));
+    std::cerr << "Seed: " << seed << std::endl;
+    srand(seed);
     int cell_x = rand() % GRID_COLS;
     int cell_y = rand() % GRID_ROWS;
 
