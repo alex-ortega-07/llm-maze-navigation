@@ -47,6 +47,7 @@ struct Options {
     bool agent_mode = false;
     bool has_seed = false;
     unsigned int seed = 0;
+    bool fast = false;
 };
 
 enum class ParseResult { Ok, Help, Error };
@@ -71,6 +72,8 @@ void print_usage(const char *program_path){
               << "                     observations to stdout (JSON Lines); WASD is disabled\n"
               << "      --seed <n>     Random seed (0-" << UINT_MAX << "). The same seed and size\n"
               << "                     always produce the same maze, entrance and exit\n"
+              << "      --fast         Generate the maze instantly (same maze as without it) and,\n"
+              << "                     in agent mode, reply to each action without waiting for a frame\n"
               << "      --help         Show this help and exit\n";
 }
 
@@ -121,6 +124,11 @@ ParseResult parse_args(int argc, char *argv[], Options &options){
 
         if(std::strcmp(arg, "--agent") == 0){
             options.agent_mode = true;
+            continue;
+        }
+
+        if(std::strcmp(arg, "--fast") == 0){
+            options.fast = true;
             continue;
         }
 
@@ -429,6 +437,53 @@ void add_visiting(Grid &grid, int cell_y, int cell_x){
     mark_visiting(grid, cell_y, cell_x - 1, cell_y, cell_x);
 }
 
+// One step of the randomized Prim's algorithm: picks a random frontier cell, connects it to the
+// cell it was reached from and adds its neighbours to the frontier. The normal mode runs one step
+// per frame (animated); --fast runs them all at once. Both make the same rand() calls in the same
+// order, so a seed gives the same maze in both modes.
+void generation_step(Grid &grid, int &cell_y, int &cell_x){
+    int rows = static_cast<int>(grid.size());
+    int cols = static_cast<int>(grid[0].size());
+
+    std::vector<std::vector<int>> visiting_list;
+    for(int i = 0; i < rows; ++i){
+        for(int k = 0; k < cols; ++k){
+            if(grid[i][k].visiting && !grid[i][k].visited){
+                visiting_list.push_back({i, k});
+            }
+        }
+    }
+
+    int num = rand() % visiting_list.size();
+
+    grid[visiting_list[num][0]][visiting_list[num][1]].visited = true;
+    grid[visiting_list[num][0]][visiting_list[num][1]].visiting = false;
+
+    cell_y = grid[visiting_list[num][0]][visiting_list[num][1]].parent_cell.y;
+    cell_x = grid[visiting_list[num][0]][visiting_list[num][1]].parent_cell.x;
+
+    if(visiting_list[num][0] - cell_y == -1){
+        quit_wall(grid, cell_y, cell_x, Direction::Up);
+    }
+
+    else if(visiting_list[num][0] - cell_y == 1){
+        quit_wall(grid, cell_y, cell_x, Direction::Down);
+    }
+
+    else if(visiting_list[num][1] - cell_x == -1){
+        quit_wall(grid, cell_y, cell_x, Direction::Left);
+    }
+
+    else if(visiting_list[num][1] - cell_x == 1){
+        quit_wall(grid, cell_y, cell_x, Direction::Right);
+    }
+
+    cell_y = visiting_list[num][0];
+    cell_x = visiting_list[num][1];
+
+    add_visiting(grid, cell_y, cell_x);
+}
+
 int main(int argc, char *argv[]){
     Options options;
 
@@ -503,8 +558,6 @@ int main(int argc, char *argv[]){
     Uint32 frame_start;
     int frame_time;
 
-    int num;
-
     SDL_Point mouse;
 
     bool maze_finished = false;
@@ -521,9 +574,18 @@ int main(int argc, char *argv[]){
         stdin_reader.start();
     }
 
-    std::vector<std::vector<int>> visiting_list;
-
     add_visiting(grid, cell_y, cell_x);
+
+    // --fast: build the whole maze now instead of one step per frame
+    if(options.fast){
+        while(!all_visited(grid)){
+            generation_step(grid, cell_y, cell_x);
+        }
+    }
+
+    // In fast agent mode, actions are answered as soon as they arrive and the window is redrawn at most FPS times per second
+    const bool fast_agent = options.fast && options.agent_mode;
+    Uint32 last_render = 0;
 
     bool running = true;
     while(running){
@@ -531,49 +593,10 @@ int main(int argc, char *argv[]){
 
         SDL_GetMouseState(&mouse.x, &mouse.y);
 
-        SDL_SetRenderDrawColor(renderer, BACKGROUND.r, BACKGROUND.g, BACKGROUND.b, BACKGROUND.a);
-        SDL_RenderClear(renderer);
+        bool generating = !all_visited(grid);
 
-        if(!all_visited(grid)){
-            draw_visiting_cell(renderer, grid, CELL_VISITING);
-
-            visiting_list.clear();
-            for(int i = 0; i < GRID_ROWS; ++i){
-                for(int k = 0; k < GRID_COLS; ++k){
-                    if(grid[i][k].visiting && !grid[i][k].visited){
-                        visiting_list.push_back({i, k});
-                    }
-                }
-            }
-
-            num = rand() % visiting_list.size();
-
-            grid[visiting_list[num][0]][visiting_list[num][1]].visited = true;
-            grid[visiting_list[num][0]][visiting_list[num][1]].visiting = false;
-
-            cell_y = grid[visiting_list[num][0]][visiting_list[num][1]].parent_cell.y;
-            cell_x = grid[visiting_list[num][0]][visiting_list[num][1]].parent_cell.x;
-
-            if(visiting_list[num][0] - cell_y == -1){
-                quit_wall(grid, cell_y, cell_x, Direction::Up);
-            }
-
-            else if(visiting_list[num][0] - cell_y == 1){
-                quit_wall(grid, cell_y, cell_x, Direction::Down);
-            }
-
-            else if(visiting_list[num][1] - cell_x == -1){
-                quit_wall(grid, cell_y, cell_x, Direction::Left);
-            }
-
-            else if(visiting_list[num][1] - cell_x == 1){
-                quit_wall(grid, cell_y, cell_x, Direction::Right);
-            }
-
-            cell_y = visiting_list[num][0];
-            cell_x = visiting_list[num][1];
-
-            add_visiting(grid, cell_y, cell_x);
+        if(generating){
+            generation_step(grid, cell_y, cell_x);
         }
 
         else if(!maze_finished){
@@ -617,20 +640,6 @@ int main(int argc, char *argv[]){
             running = false;
         }
 
-        SDL_SetRenderDrawColor(renderer, WHITE.r, WHITE.g, WHITE.b, WHITE.a);
-
-        for(int i = 0; i < GRID_ROWS; ++i){
-            for(int k = 0; k < GRID_COLS; ++k){
-                grid[i][k].create(renderer);
-            }
-        }
-
-        if(maze_finished){
-            draw_marker(renderer, entrance.y, entrance.x, CELL_START_WALL);
-            draw_marker(renderer, maze_exit.y, maze_exit.x, CELL_END_WALL);
-            draw_marker(renderer, player_y, player_x, PLAYER, 12);
-        }
-
         if(keyboard_state[SDL_SCANCODE_ESCAPE]){
             running = false;
         }
@@ -656,11 +665,48 @@ int main(int argc, char *argv[]){
             }
         }
 
-        SDL_RenderPresent(renderer);
+        // Draw the window (every iteration normally, at most FPS times per second in fast agent mode)
+        Uint32 now = SDL_GetTicks();
 
-        frame_time = SDL_GetTicks() - frame_start;
-        if(FRAME_DELAY > frame_time){
-            SDL_Delay(FRAME_DELAY - frame_time);
+        if(!fast_agent || now - last_render >= static_cast<Uint32>(FRAME_DELAY)){
+            last_render = now;
+
+            SDL_SetRenderDrawColor(renderer, BACKGROUND.r, BACKGROUND.g, BACKGROUND.b, BACKGROUND.a);
+            SDL_RenderClear(renderer);
+
+            if(generating){
+                draw_visiting_cell(renderer, grid, CELL_VISITING);
+            }
+
+            SDL_SetRenderDrawColor(renderer, WHITE.r, WHITE.g, WHITE.b, WHITE.a);
+
+            for(int i = 0; i < GRID_ROWS; ++i){
+                for(int k = 0; k < GRID_COLS; ++k){
+                    grid[i][k].create(renderer);
+                }
+            }
+
+            if(maze_finished){
+                draw_marker(renderer, entrance.y, entrance.x, CELL_START_WALL);
+                draw_marker(renderer, maze_exit.y, maze_exit.x, CELL_END_WALL);
+                draw_marker(renderer, player_y, player_x, PLAYER, 12);
+            }
+
+            SDL_RenderPresent(renderer);
+        }
+
+        if(fast_agent){
+            // Sleep until the next action arrives or it is time to redraw / handle window events
+            Uint32 since_render = SDL_GetTicks() - last_render;
+            int timeout = since_render >= static_cast<Uint32>(FRAME_DELAY) ? 0 : FRAME_DELAY - static_cast<int>(since_render);
+            stdin_reader.wait_for_line(timeout);
+        }
+
+        else{
+            frame_time = SDL_GetTicks() - frame_start;
+            if(FRAME_DELAY > frame_time){
+                SDL_Delay(FRAME_DELAY - frame_time);
+            }
         }
     }
 
