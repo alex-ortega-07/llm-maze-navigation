@@ -64,6 +64,7 @@ The maze size can be set from the command line (default: 20 columns × 10 rows, 
 ```bash
 maze.exe -w 30 -h 15
 maze.exe --width 30 --height 15
+maze.exe --seed 42
 maze.exe --help
 ```
 
@@ -72,6 +73,7 @@ maze.exe --help
 | `-w`, `--width <n>` | Number of columns |
 | `-h`, `--height <n>` | Number of rows |
 | `--agent` | Agent mode: read actions from stdin and write observations to stdout; WASD is disabled. Used by the supervisor |
+| `--seed <n>` | Random seed (0–4294967295). The same seed and size always produce the same maze, entrance and exit. Without it, the current time is used; the seed is printed to the console either way, so any maze can be reproduced |
 | `--help` | Show the help and exit |
 
 Each cell is 40 px wide, so large values can make the window bigger than the screen.
@@ -96,6 +98,7 @@ RandomAgent(name='RandomAgent'): reached_exit=True steps=20
 | `-w`, `--width <n>` | Number of columns |
 | `--height <n>` | Number of rows (there is no `-h`, which shows the help) |
 | `--max-steps <n>` | Stop the episode after this many actions (default 500) |
+| `--seed <n>` | Maze seed (0–4294967295), passed to `maze.exe`. Use the same seed and size to compare agents on the same maze |
 
 ### Available agents
 | Name | Class | Behaviour |
@@ -108,6 +111,13 @@ The generated mazes have no cycles (they are "perfect" mazes), so the wall follo
 
 ```bash
 python src/run.py --agent right-hand --width 20 --height 10 --max-steps 2000
+```
+
+To compare agents on the same maze, give them the same `--seed` and size:
+
+```bash
+python src/run.py --agent right-hand --width 10 --height 6 --seed 123
+python src/run.py --agent left-hand --width 10 --height 6 --seed 123
 ```
 
 ### Writing a new agent
